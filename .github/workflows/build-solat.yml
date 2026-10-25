@@ -147,7 +147,6 @@ jobs:
               static final String[] NAMES = {"Subuh", "Syuruk", "Zohor", "Asar", "Maghrib", "Isyak"};
               static final TimeZone TZ = TimeZone.getTimeZone("Asia/Kuala_Lumpur");
 
-              static final int BG = Color.parseColor("#0B1F17");
               static final int ROW = Color.parseColor("#12362A");
               static final int HILITE = Color.parseColor("#1F8A5B");
               static final int GOLD = Color.parseColor("#E8C66A");
@@ -157,6 +156,7 @@ jobs:
               SharedPreferences prefs;
               TextView dateLine, nextLine, statusLine;
               LinearLayout[] rows = new LinearLayout[6];
+              TextView[] rowNames = new TextView[6];
               TextView[] rowTimes = new TextView[6];
               String[] times;
               String loadedDay = "";
@@ -207,18 +207,28 @@ jobs:
                   return t;
               }
 
-              GradientDrawable box(int color) {
+              GradientDrawable box(int color, boolean isActive) {
                   GradientDrawable g = new GradientDrawable();
                   g.setColor(color);
-                  g.setCornerRadius(dp(10));
+                  g.setCornerRadius(dp(12));
+                  if (isActive) {
+                      g.setStroke(dp(2), GOLD);
+                  } else {
+                      g.setStroke(dp(1), Color.parseColor("#1B4D3E"));
+                  }
                   return g;
               }
 
               void buildUi() {
                   LinearLayout root = new LinearLayout(this);
                   root.setOrientation(LinearLayout.VERTICAL);
-                  root.setBackgroundColor(BG);
-                  root.setPadding(dp(56), dp(28), dp(56), dp(20));
+
+                  GradientDrawable rootGradient = new GradientDrawable(
+                          GradientDrawable.Orientation.TOP_BOTTOM,
+                          new int[]{Color.parseColor("#061A12"), Color.parseColor("#0B1F17")}
+                  );
+                  root.setBackground(rootGradient);
+                  root.setPadding(dp(48), dp(24), dp(48), dp(20));
 
                   LinearLayout head = new LinearLayout(this);
                   head.setOrientation(LinearLayout.HORIZONTAL);
@@ -230,10 +240,10 @@ jobs:
                   dateLine = tv("", 20, MUTED, false);
                   root.addView(dateLine);
 
-                  nextLine = tv("Memuatkan\u2026", 30, GOLD, true);
+                  nextLine = tv("Memuatkan\u2026", 28, GOLD, true);
                   LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
                           LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                  nlp.setMargins(0, dp(12), 0, dp(12));
+                  nlp.setMargins(0, dp(10), 0, dp(12));
                   root.addView(nextLine, nlp);
 
                   for (int i = 0; i < 6; i++) {
@@ -241,17 +251,22 @@ jobs:
                       row.setOrientation(LinearLayout.HORIZONTAL);
                       row.setGravity(Gravity.CENTER_VERTICAL);
                       row.setPadding(dp(20), 0, dp(20), 0);
-                      row.setBackground(box(ROW));
-                      TextView name = tv(NAMES[i], 24, Color.WHITE, false);
-                      TextView time = tv("--:--", 24, Color.WHITE, true);
+                      row.setBackground(box(ROW, false));
+                      
+                      TextView name = tv(NAMES[i], 22, Color.WHITE, false);
+                      TextView time = tv("--:--", 22, Color.WHITE, true);
                       time.setGravity(Gravity.END);
+                      
                       row.addView(name, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
                       row.addView(time, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                      
                       LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                              LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
-                      lp.setMargins(0, 0, 0, dp(4));
+                              LinearLayout.LayoutParams.MATCH_PARENT, dp(42));
+                      lp.setMargins(0, 0, 0, dp(6));
                       root.addView(row, lp);
+                      
                       rows[i] = row;
+                      rowNames[i] = name;
                       rowTimes[i] = time;
                   }
 
@@ -358,7 +373,8 @@ jobs:
                   if (times == null) {
                       for (int i = 0; i < 6; i++) {
                           rowTimes[i].setText("--:--");
-                          rows[i].setBackground(box(ROW));
+                          rows[i].setBackground(box(ROW, false));
+                          rowNames[i].setText(NAMES[i]);
                       }
                       dateLine.setText("");
                       nextLine.setText(error == null ? "Memuatkan\u2026" : "Tiada data waktu solat");
@@ -379,7 +395,14 @@ jobs:
                   boolean tomorrow = next < 0;
                   if (tomorrow) next = 0;
                   int diff = toMin(times[next]) - nowMin + (tomorrow ? 1440 : 0);
-                  for (int i = 0; i < 6; i++) rows[i].setBackground(box(i == next ? HILITE : ROW));
+
+                  for (int i = 0; i < 6; i++) {
+                      boolean isActive = (i == next);
+                      rows[i].setBackground(box(isActive ? HILITE : ROW, isActive));
+                      rowNames[i].setText(isActive ? "\u25CF " + NAMES[i] : NAMES[i]);
+                      rowNames[i].setTextColor(isActive ? GOLD : Color.WHITE);
+                      rowTimes[i].setTextColor(isActive ? GOLD : Color.WHITE);
+                  }
 
                   nextLine.setText("Seterusnya: " + NAMES[next] + (tomorrow ? " (esok) " : " ")
                           + fmt12(times[next]) + "  \u00B7  " + countdown(diff));
@@ -395,3 +418,4 @@ jobs:
         with:
           name: solat-apk
           path: solat/app/build/outputs/apk/debug/app-debug.apk
+          
