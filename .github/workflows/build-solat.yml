@@ -1,0 +1,397 @@
+name: Build Solat APK
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-34 build-tools;34.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Write project files
+        run: |
+          mkdir -p solat/app/src/main/java/my/solat/tvcard
+          mkdir -p solat/app/src/main/res/xml solat/app/src/main/res/drawable
+          cd solat
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "solat"
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.5.2' apply false }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' }
+          android {
+              namespace 'my.solat.tvcard'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'my.solat.tvcard'
+                  minSdk 23
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+              <uses-feature android:name="android.software.leanback" android:required="false" />
+              <application
+                  android:label="Solat"
+                  android:icon="@drawable/ic_launcher"
+                  android:banner="@drawable/banner"
+                  android:allowBackup="false">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                      </intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="com.gathin.tvhome.category.DOCK_CARD" />
+                      </intent-filter>
+                      <meta-data android:name="com.gathin.tvhome.card" android:resource="@xml/module_card" />
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/xml/module_card.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <card spec="1" label="Solat" caption="Waktu solat" accent="#2E9E6B" />
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="96dp" android:height="96dp"
+              android:viewportWidth="96" android:viewportHeight="96">
+              <path android:fillColor="#0F3D2E" android:pathData="M0,0h96v96h-96z" />
+              <path android:fillColor="#E8C66A" android:pathData="M18,48a30,30 0 1,0 60,0a30,30 0 1,0 -60,0z" />
+              <path android:fillColor="#0F3D2E" android:pathData="M32,42a26,26 0 1,0 52,0a26,26 0 1,0 -52,0z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/drawable/banner.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="320dp" android:height="180dp"
+              android:viewportWidth="320" android:viewportHeight="180">
+              <path android:fillColor="#0F3D2E" android:pathData="M0,0h320v180h-320z" />
+              <path android:fillColor="#E8C66A" android:pathData="M114,90a46,46 0 1,0 92,0a46,46 0 1,0 -92,0z" />
+              <path android:fillColor="#0F3D2E" android:pathData="M138,78a40,40 0 1,0 80,0a40,40 0 1,0 -80,0z" />
+              <path android:fillColor="#E8C66A" android:pathData="M198,62a7,7 0 1,0 14,0a7,7 0 1,0 -14,0z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/java/my/solat/tvcard/MainActivity.java <<'EOF'
+          package my.solat.tvcard;
+
+          import android.app.Activity;
+          import android.content.SharedPreferences;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.text.TextUtils;
+          import android.view.Gravity;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          import org.json.JSONObject;
+
+          import java.io.BufferedReader;
+          import java.io.IOException;
+          import java.io.InputStreamReader;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.text.SimpleDateFormat;
+          import java.util.Calendar;
+          import java.util.Date;
+          import java.util.Locale;
+          import java.util.TimeZone;
+
+          public class MainActivity extends Activity {
+              static final String ZONE = "WLY01";
+              static final String ZONE_NAME = "Kuala Lumpur & Putrajaya";
+              static final String API_URL =
+                      "https://www.e-solat.gov.my/index.php?r=esolatApi/takwimsolat&period=today&zone=" + ZONE;
+              static final String[] KEYS = {"fajr", "syuruk", "dhuhr", "asr", "maghrib", "isha"};
+              static final String[] NAMES = {"Subuh", "Syuruk", "Zohor", "Asar", "Maghrib", "Isyak"};
+              static final TimeZone TZ = TimeZone.getTimeZone("Asia/Kuala_Lumpur");
+
+              static final int BG = Color.parseColor("#0B1F17");
+              static final int ROW = Color.parseColor("#12362A");
+              static final int HILITE = Color.parseColor("#1F8A5B");
+              static final int GOLD = Color.parseColor("#E8C66A");
+              static final int MUTED = Color.parseColor("#9DB8AA");
+
+              final Handler handler = new Handler(Looper.getMainLooper());
+              SharedPreferences prefs;
+              TextView dateLine, nextLine, statusLine;
+              LinearLayout[] rows = new LinearLayout[6];
+              TextView[] rowTimes = new TextView[6];
+              String[] times;
+              String loadedDay = "";
+              String hijri = "";
+              String error = null;
+              boolean fetching = false;
+              long lastTry = 0;
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  prefs = getSharedPreferences("solat", MODE_PRIVATE);
+                  buildUi();
+                  loadCache();
+              }
+
+              final Runnable tick = new Runnable() {
+                  @Override
+                  public void run() {
+                      onTick();
+                      handler.postDelayed(this, 15000);
+                  }
+              };
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  handler.removeCallbacks(tick);
+                  handler.post(tick);
+              }
+
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  handler.removeCallbacks(tick);
+              }
+
+              int dp(int v) {
+                  return Math.round(v * getResources().getDisplayMetrics().density);
+              }
+
+              TextView tv(String s, int sp, int color, boolean bold) {
+                  TextView t = new TextView(this);
+                  t.setText(s);
+                  t.setTextSize(sp);
+                  t.setTextColor(color);
+                  if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+                  return t;
+              }
+
+              GradientDrawable box(int color) {
+                  GradientDrawable g = new GradientDrawable();
+                  g.setColor(color);
+                  g.setCornerRadius(dp(10));
+                  return g;
+              }
+
+              void buildUi() {
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setBackgroundColor(BG);
+                  root.setPadding(dp(56), dp(28), dp(56), dp(20));
+
+                  LinearLayout head = new LinearLayout(this);
+                  head.setOrientation(LinearLayout.HORIZONTAL);
+                  head.setGravity(Gravity.BOTTOM);
+                  head.addView(tv("Waktu Solat", 32, Color.WHITE, true));
+                  head.addView(tv("   " + ZONE_NAME + " \u00B7 " + ZONE, 18, MUTED, false));
+                  root.addView(head);
+
+                  dateLine = tv("", 20, MUTED, false);
+                  root.addView(dateLine);
+
+                  nextLine = tv("Memuatkan\u2026", 30, GOLD, true);
+                  LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                  nlp.setMargins(0, dp(12), 0, dp(12));
+                  root.addView(nextLine, nlp);
+
+                  for (int i = 0; i < 6; i++) {
+                      LinearLayout row = new LinearLayout(this);
+                      row.setOrientation(LinearLayout.HORIZONTAL);
+                      row.setGravity(Gravity.CENTER_VERTICAL);
+                      row.setPadding(dp(20), 0, dp(20), 0);
+                      row.setBackground(box(ROW));
+                      TextView name = tv(NAMES[i], 24, Color.WHITE, false);
+                      TextView time = tv("--:--", 24, Color.WHITE, true);
+                      time.setGravity(Gravity.END);
+                      row.addView(name, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                      row.addView(time, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                              LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+                      lp.setMargins(0, 0, 0, dp(4));
+                      root.addView(row, lp);
+                      rows[i] = row;
+                      rowTimes[i] = time;
+                  }
+
+                  statusLine = tv("", 16, MUTED, false);
+                  root.addView(statusLine);
+                  setContentView(root);
+              }
+
+              static String today() {
+                  SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                  f.setTimeZone(TZ);
+                  return f.format(new Date());
+              }
+
+              void loadCache() {
+                  String day = prefs.getString("day", "");
+                  String[] t = prefs.getString("times", "").split(",");
+                  if (day.equals(today()) && t.length == 6) {
+                      times = t;
+                      loadedDay = day;
+                      hijri = prefs.getString("hijri", "");
+                  }
+              }
+
+              void onTick() {
+                  boolean fresh = times != null && today().equals(loadedDay);
+                  if (!fresh) {
+                      times = null;
+                      if (!fetching && System.currentTimeMillis() - lastTry > 60000) fetch();
+                  }
+                  render();
+              }
+
+              void fetch() {
+                  fetching = true;
+                  lastTry = System.currentTimeMillis();
+                  new Thread(() -> {
+                      try {
+                          JSONObject o = new JSONObject(download()).getJSONArray("prayerTime").getJSONObject(0);
+                          final String[] t = new String[6];
+                          for (int i = 0; i < 6; i++) {
+                              t[i] = o.getString(KEYS[i]).substring(0, 5);
+                              if (!t[i].matches("\\d\\d:\\d\\d")) throw new IOException("Format masa tidak dikenali");
+                          }
+                          final String hj = o.optString("hijri", "");
+                          final String day = today();
+                          runOnUiThread(() -> {
+                              times = t;
+                              loadedDay = day;
+                              hijri = hj;
+                              error = null;
+                              fetching = false;
+                              prefs.edit().putString("day", day).putString("times", TextUtils.join(",", t))
+                                      .putString("hijri", hj).apply();
+                              render();
+                          });
+                      } catch (final Exception e) {
+                          runOnUiThread(() -> {
+                              error = "Tiada sambungan ke e-solat.gov.my (" + e.getClass().getSimpleName() + ")";
+                              fetching = false;
+                              render();
+                          });
+                      }
+                  }).start();
+              }
+
+              static String download() throws IOException {
+                  HttpURLConnection c = (HttpURLConnection) new URL(API_URL).openConnection();
+                  c.setConnectTimeout(10000);
+                  c.setReadTimeout(15000);
+                  c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; TV) WaktuSolatCard/1.0");
+                  c.setRequestProperty("Accept", "application/json");
+                  try {
+                      if (c.getResponseCode() != 200) throw new IOException("HTTP " + c.getResponseCode());
+                      BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
+                      StringBuilder sb = new StringBuilder();
+                      String line;
+                      while ((line = r.readLine()) != null) sb.append(line);
+                      r.close();
+                      return sb.toString();
+                  } finally {
+                      c.disconnect();
+                  }
+              }
+
+              static int toMin(String hhmm) {
+                  return Integer.parseInt(hhmm.substring(0, 2)) * 60 + Integer.parseInt(hhmm.substring(3, 5));
+              }
+
+              static String fmt12(String hhmm) {
+                  int h = Integer.parseInt(hhmm.substring(0, 2));
+                  int hh = h % 12;
+                  if (hh == 0) hh = 12;
+                  return hh + ":" + hhmm.substring(3, 5) + (h >= 12 ? " PM" : " AM");
+              }
+
+              static String countdown(int diff) {
+                  int h = diff / 60, m = diff % 60;
+                  if (h > 0) return "dalam " + h + "j " + m + "m";
+                  return "dalam " + m + "m";
+              }
+
+              void render() {
+                  if (times == null) {
+                      for (int i = 0; i < 6; i++) {
+                          rowTimes[i].setText("--:--");
+                          rows[i].setBackground(box(ROW));
+                      }
+                      dateLine.setText("");
+                      nextLine.setText(error == null ? "Memuatkan\u2026" : "Tiada data waktu solat");
+                      statusLine.setText(error == null ? "" : error + " \u00B7 cuba lagi sebentar lagi");
+                      return;
+                  }
+                  Calendar cal = Calendar.getInstance(TZ);
+                  int nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE);
+                  SimpleDateFormat f = new SimpleDateFormat("EEEE, d MMMM yyyy", new Locale("ms", "MY"));
+                  f.setTimeZone(TZ);
+                  dateLine.setText(f.format(cal.getTime()) + (hijri.isEmpty() ? "" : "  \u00B7  " + hijri + " H"));
+
+                  int next = -1;
+                  for (int i = 0; i < 6; i++) {
+                      rowTimes[i].setText(fmt12(times[i]));
+                      if (next < 0 && toMin(times[i]) > nowMin) next = i;
+                  }
+                  boolean tomorrow = next < 0;
+                  if (tomorrow) next = 0;
+                  int diff = toMin(times[next]) - nowMin + (tomorrow ? 1440 : 0);
+                  for (int i = 0; i < 6; i++) rows[i].setBackground(box(i == next ? HILITE : ROW));
+
+                  nextLine.setText("Seterusnya: " + NAMES[next] + (tomorrow ? " (esok) " : " ")
+                          + fmt12(times[next]) + "  \u00B7  " + countdown(diff));
+                  statusLine.setText("Sumber: JAKIM e-Solat (e-solat.gov.my)");
+              }
+          }
+          EOF
+
+      - name: Build
+        working-directory: solat
+        run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solat-apk
+          path: solat/app/build/outputs/apk/debug/app-debug.apk
